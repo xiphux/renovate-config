@@ -1,0 +1,294 @@
+{
+  // The Renovate settings every repository under xiphux shares. A repository
+  // extends this and keeps in its own .github/renovate.json5 only what is its
+  // own -- see README.md for how the two combine.
+  //
+  // Renovate keeps dependencies current in place of Dependabot's version
+  // updates, and raises the security fixes too (osvVulnerabilityAlerts and
+  // vulnerabilityAlerts at the end); Dependabot's own security pull requests
+  // are switched off where this is used, and its ALERTS stay on.
+  //
+  // Why Renovate: Dependabot offers only a package's newest version, so a
+  // pending major replaced that package's minor and patch updates. It also
+  // rebases a PR only when it CONFLICTS, never when it merely falls behind
+  // the default branch, so a batch stalled after its first merge. Renovate
+  // raises a major and a minor of the same package at once, and rebases
+  // whatever falls behind.
+  //
+  // Updates arrive on a weekly timetable rather than as they are released:
+  // see `schedule` below and the groups in packageRules.
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+
+  extends: ['config:recommended'],
+
+  // Rebase whenever a branch falls behind the default branch, not only when
+  // it conflicts. `config:recommended` would infer it from automerge, but it
+  // is worth stating where it can be read.
+  rebaseWhen: 'behind-base-branch',
+
+  // Hold back releases younger than this. Hijacked npm releases are usually
+  // caught and pulled within days, and most of these PRs merge unattended.
+  // Three days for a patch (in packageRules).
+  //
+  // A repository whose package manager has a cooldown of its own -- pnpm's
+  // minimumReleaseAge, uv's exclude-newer -- must keep it at or below the
+  // shortest age here (3 days), or Renovate's pull requests fail to install.
+  minimumReleaseAge: '7 days',
+
+  dependencyDashboard: true,
+
+  // The weekly timetable, and the slot for anything the groups in
+  // packageRules do not claim: Sunday, 00:00-05:59 UTC. Each group has a day
+  // of its own --
+  //
+  //   Mon  lock file maintenance     Thu  test and build
+  //   Tue  aws                       Fri  production dependencies
+  //   Wed  lint and format           Sat  github actions
+  //   Sun  everything else: majors, 0.x packages, package managers, images
+  //
+  // -- the same days in every repository that has the group. This is where
+  // the CI minutes go: before it, every release that cleared the cooldown
+  // was a pull request of its own, and the AWS SDK, which publishes almost
+  // daily, opened ten to twelve in 19 days in each repository using it.
+  // Replayed against ten days of real updates, this timetable raises about
+  // 60% fewer pull requests, and every one saved is a CI run (and, where
+  // the default branch deploys, a deploy).
+  //
+  // A day per group rather than one weekly slot for all of them, because of
+  // the up-to-date rule in branch protection: open together, every merge
+  // would put the others behind and re-run their CI, so six pull requests
+  // would cost 6+5+4+3+2+1 runs. Spread out, one is usually open at a time.
+  //
+  // Six hours, because Mend's free plan runs Renovate about every four, so a
+  // slot always holds a run. Wider would let more runs fall in it, and each
+  // can open another pull request for releases that aged in the meantime.
+  // Outside its slot a branch is still rebased and updated
+  // (`updateNotScheduled`), so nothing already open waits for next week. To
+  // take something early, tick it under "Awaiting Schedule" on the
+  // dependency dashboard.
+  schedule: ['* 0-5 * * 0'],
+
+  // Merge commits.
+  automergeStrategy: 'merge',
+  // GitHub's own auto-merge, so a PR lands the moment its checks pass without
+  // waiting for a Renovate run to come round and do it. Needs branch
+  // protection with required checks on the default branch; without them
+  // GitHub declines to arm it and Renovate merges during its own run.
+  platformAutomerge: true,
+
+  // Not set here, because repositories differ: commitMessagePrefix ("deps:"
+  // or "chore(deps):", with a matching prefix for dev dependencies) and
+  // prConcurrentLimit (sized to each repository's CI cost).
+
+  // The label Renovate applies to every pull request; it applies none
+  // unless told.
+  labels: ['dependencies'],
+
+  // Weekly, re-resolve the whole lockfile within the ranges already declared.
+  // Renovate otherwise updates only what a manifest names, so a transitive
+  // dependency moves only when something above it does -- which is how
+  // mysteryd8podcast sat on a vulnerable brace-expansion for 15 days after the
+  // fixed release, until an advisory failed every PR's audit. The package
+  // manager's own cooldown, where there is one, holds what this pulls in to
+  // the same delay, which Renovate's setting does not reach. CI gates it like
+  // any other update, so it merges unattended. Monday's slot in the
+  // timetable. A repository with no lockfile is unaffected.
+  lockFileMaintenance: {
+    enabled: true,
+    automerge: true,
+    schedule: ['* 0-5 * * 1'],
+  },
+
+  // A repository's own packageRules are appended after these, and later
+  // rules win where two set the same option -- so a repository can add to a
+  // group, or make an exception to the auto-merge policy, by adding a rule.
+  packageRules: [
+    {
+      matchManagers: ['github-actions'],
+      commitMessagePrefix: 'ci:',
+      // Every action is pinned by SHA and Actions patches and minors merge
+      // unattended, so with no cooldown a release published from a hijacked
+      // account would be pinned within a day of its tag moving. A tag
+      // compromise is usually caught and pulled within days; a week lets that
+      // happen first.
+      minimumReleaseAge: '7 days',
+    },
+    {
+      matchUpdateTypes: ['patch'],
+      minimumReleaseAge: '3 days',
+    },
+
+    // What auto-merges, and what does not: patch yes; minor yes, unless the
+    // package is 0.x, where a minor is the breaking release; majors and
+    // prereleases never.
+    {
+      // A 0.0.x patch rides along with the rest. Semver promises nothing
+      // there -- any release may break -- but CI is the gate that matters,
+      // and it covers those packages like any other. Hold one by name if that
+      // ever stops being true.
+      matchUpdateTypes: ['patch', 'minor'],
+      automerge: true,
+    },
+    {
+      // A repository that trusts its CI with a particular 0.x package's
+      // minors re-enables them with a rule of its own, which lands after this.
+      matchUpdateTypes: ['minor'],
+      matchCurrentVersion: '/^v?0\\./',
+      automerge: false,
+    },
+    {
+      // Majors arrive as their own pull requests, alongside that package's
+      // routine updates rather than in place of them.
+      matchUpdateTypes: ['major'],
+      // Rebased only on a genuine conflict, unlike everything else. A major
+      // never auto-merges, so it sits open until somebody decides on it --
+      // and under `rebaseWhen: 'behind-base-branch'` every unrelated merge
+      // rebased it and re-ran the whole suite against a pull request that was
+      // never going to land on that push. Measured in heatsheet-io over 18-20
+      // September: 44 of its 54 pull-request CI runs were on majors,
+      // renovate/pnpm-12.x alone running twelve times at roughly 51 billable
+      // minutes each.
+      //
+      // Being behind costs a major nothing: nothing merges it automatically,
+      // and whoever picks it up wants a fresh run at that moment anyway --
+      // which ticking its checkbox on the dependency dashboard provides.
+      rebaseWhen: 'conflicted',
+      automerge: false,
+    },
+    {
+      matchCurrentVersion: '/-/',
+      automerge: false,
+    },
+
+    // The groups, each in its slot in the timetable (see `schedule`). Later
+    // rules win, so the ones matching by name take packages out of the two
+    // that match by dependency type. The lists name packages a given
+    // repository may not use, so a package lands in the same group wherever
+    // it turns up; a repository adds its own by repeating the groupName in a
+    // rule of its own, with the same schedule.
+    //
+    // Every group leaves out 0.x packages (the negated matchCurrentVersion).
+    // A 0.x minor does not auto-merge (see above), and a group auto-merges
+    // only if every update in it does, so one would hold its whole group
+    // open; left out, a 0.x package raises its own pull request on Sunday.
+    //
+    // The cost of batching: an update that fails CI holds the rest of its
+    // group until it is fixed, or excluded by a rule of its own. Majors are
+    // never grouped, and a security fix ignores all of this -- Renovate
+    // applies `vulnerabilityAlerts` after these rules, and with `force`.
+    {
+      groupName: 'production dependencies',
+      // npm and Cargo; pep621.
+      matchDepTypes: ['dependencies', 'project.dependencies'],
+      matchUpdateTypes: ['minor', 'patch'],
+      matchCurrentVersion: '!/^v?0\\./',
+      schedule: ['* 0-5 * * 5'],
+    },
+    {
+      groupName: 'test and build',
+      // npm; Cargo; pep621's [dependency-groups], extras and build backend.
+      matchDepTypes: [
+        'devDependencies',
+        'dev-dependencies',
+        'build-dependencies',
+        'dependency-groups',
+        'project.optional-dependencies',
+        'build-system.requires',
+      ],
+      matchUpdateTypes: ['minor', 'patch'],
+      matchCurrentVersion: '!/^v?0\\./',
+      schedule: ['* 0-5 * * 4'],
+    },
+    {
+      groupName: 'lint and format',
+      matchPackageNames: [
+        'eslint',
+        'eslint-*',
+        '@eslint/**',
+        '@*/eslint-*',
+        'typescript-eslint',
+        '@typescript-eslint/**',
+        'globals',
+        'prettier',
+        'prettier-*',
+        '@biomejs/biome',
+        'knip',
+        'lint-staged',
+        'husky',
+        'publint',
+        'ruff',
+        'deptry',
+        'pre-commit',
+        'prek',
+        'pre-commit/pre-commit-hooks',
+      ],
+      matchUpdateTypes: ['minor', 'patch'],
+      matchCurrentVersion: '!/^v?0\\./',
+      schedule: ['* 0-5 * * 3'],
+    },
+    {
+      groupName: 'aws',
+      matchPackageNames: [
+        '@aws-sdk/**',
+        'aws-cdk',
+        'aws-cdk-lib',
+        'cdk-nag',
+        'aws-xray-sdk-core',
+        '@types/aws-lambda',
+        'aws-ses-v2-local',
+        'amazon/dynamodb-local',
+        'boto3',
+        'botocore',
+      ],
+      matchUpdateTypes: ['minor', 'patch'],
+      matchCurrentVersion: '!/^v?0\\./',
+      schedule: ['* 0-5 * * 2'],
+    },
+    {
+      groupName: 'github actions',
+      matchManagers: ['github-actions'],
+      matchUpdateTypes: ['minor', 'patch', 'digest'],
+      matchCurrentVersion: '!/^v?0\\./',
+      schedule: ['* 0-5 * * 6'],
+    },
+    {
+      // zizmor-action runs only zizmor versions it knows, and the version it
+      // runs (its `version:` input, tracked as the zizmor image) is in the
+      // group above. The action is 0.x, so the exclusion would send it to
+      // Sunday, a day after a version it may not know yet, so it is kept
+      // with the group. A minor of it does not auto-merge (it is 0.x), so one
+      // holds the group for review.
+      groupName: 'github actions',
+      matchPackageNames: ['zizmorcore/zizmor-action'],
+      matchUpdateTypes: ['minor', 'patch', 'digest'],
+      schedule: ['* 0-5 * * 6'],
+    },
+  ],
+
+  // Renovate's own vulnerability source, from osv.dev, rather than the
+  // GitHub alerts that `vulnerabilityAlerts` below reads. Both are wanted.
+  //
+  // `vulnerabilityAlerts` is `supportedPlatforms: ["github"]` -- it consumes
+  // a repository's Dependabot ALERTS, which means it works only if the
+  // Renovate app can read them. That permission has not been confirmed, and
+  // the failure would be silent: no alerts visible, no fix raised, nothing
+  // red. osv.dev is queried by Renovate directly, so this path does not
+  // depend on it. osv.dev ingests GitHub's advisories among other sources,
+  // so turning it on does not narrow what gets caught.
+  //
+  // This is what makes it safe to stop Dependabot opening its own security
+  // pull requests: with a source Renovate owns, switching those off removes a
+  // duplicate rather than the only fix. Dependabot ALERTS stay on -- they
+  // cost nothing, and they feed `vulnerabilityAlerts` if that permission does
+  // turn out to exist.
+  //
+  // Container images are not in scope here; Grype covers those.
+  osvVulnerabilityAlerts: true,
+
+  // A vulnerable package is proposed regardless of the cooldowns above, and
+  // always waits for a person.
+  vulnerabilityAlerts: {
+    minimumReleaseAge: null,
+    automerge: false,
+  },
+}

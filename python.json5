@@ -1,0 +1,42 @@
+{
+  // For Python repositories managed with uv (pyproject.toml plus uv.lock).
+  // Extend it after the default preset:
+  //
+  //   extends: [
+  //     'github>xiphux/renovate-config:default.json5',
+  //     'github>xiphux/renovate-config:python.json5',
+  //   ],
+  //
+  // Its rules land after the default preset's and before the repository's
+  // own, so the ruff exceptions below override the default 0.x policy.
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+
+  packageRules: [
+    {
+      // pyproject.toml states floors (`ruff>=0.16.9`) and uv.lock states what
+      // is installed. The default `auto` strategy changes nothing when an
+      // update already satisfies an open-ended floor, so it would raise
+      // almost no PRs; `update-lockfile` moves the lock instead.
+      matchManagers: ['pep621'],
+      rangeStrategy: 'update-lockfile',
+    },
+    {
+      // ruff is 0.x, but CI judges its minors directly: a new rule or
+      // formatting change fails the lint job rather than slipping through.
+      // The pattern leaves out prereleases, which this rule would otherwise
+      // re-enable: it lands after the default preset's prerelease rule.
+      matchPackageNames: ['ruff'],
+      matchUpdateTypes: ['minor'],
+      matchCurrentVersion: '/^v?0\\.[^-]*$/',
+      automerge: true,
+    },
+    {
+      // The timetable leaves 0.x packages out of its groups only because
+      // their minors do not auto-merge; ruff's do (see above).
+      groupName: 'lint and format',
+      matchPackageNames: ['ruff'],
+      matchUpdateTypes: ['minor', 'patch'],
+      schedule: ['* 0-5 * * 3'],
+    },
+  ],
+}
