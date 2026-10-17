@@ -233,7 +233,6 @@
         'aws-cdk',
         'aws-cdk-lib',
         'cdk-nag',
-        'aws-xray-sdk-core',
         '@types/aws-lambda',
         'aws-ses-v2-local',
         'amazon/dynamodb-local',
