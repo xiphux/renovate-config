@@ -104,18 +104,19 @@
   // group, or make an exception to the auto-merge policy, by adding a rule.
   packageRules: [
     {
+      matchUpdateTypes: ['patch'],
+      minimumReleaseAge: '3 days',
+    },
+    {
       matchManagers: ['github-actions'],
       commitMessagePrefix: 'ci:',
       // Every action is pinned by SHA and Actions patches and minors merge
       // unattended, so with no cooldown a release published from a hijacked
       // account would be pinned within a day of its tag moving. A tag
       // compromise is usually caught and pulled within days; a week lets that
-      // happen first.
+      // happen first -- patches included, which is why this comes after the
+      // 3-day patch rule above.
       minimumReleaseAge: '7 days',
-    },
-    {
-      matchUpdateTypes: ['patch'],
-      minimumReleaseAge: '3 days',
     },
 
     // What auto-merges, and what does not: patch yes; minor yes, unless the
