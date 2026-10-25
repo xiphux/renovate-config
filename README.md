@@ -44,6 +44,10 @@ So a repository customizes by adding rules:
 
 Note that `/-/` also matches Docker tags such as `26-alpine`, so a repository auto-merging Dockerfile digest updates needs its rule to come after it, which a repository rule always does.
 
+## Runner labels in a matrix
+
+Renovate's github-actions manager updates `runs-on` labels but not runner labels listed in a matrix. Put `# renovate: github-runner` on the line above each one, written one per line (a block list, not `[a, b]`), and the preset's custom manager moves it in the same pull request as the `runs-on` labels.
+
 ## Things that stay in each repository
 
 - `hostRules` for private registries, such as the `@xiphux` scope on GitHub Packages. The token comes from a per-repository Renovate secret (`{{ secrets.NPM_PKG_GITHUB_TOKEN }}`), so the rule belongs where that secret is.

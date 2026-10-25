@@ -118,6 +118,14 @@
       // 3-day patch rule above.
       minimumReleaseAge: '7 days',
     },
+    {
+      // The same for the runner labels `customManagers` below finds in
+      // matrices, which are not the github-actions manager's. The built-in
+      // manager gives its runners this depType too, so this matches both.
+      matchDepTypes: ['github-runner'],
+      commitMessagePrefix: 'ci:',
+      minimumReleaseAge: '7 days',
+    },
 
     // What auto-merges, and what does not: patch yes; minor yes, unless the
     // package is 0.x, where a minor is the breaking release; majors and
@@ -262,6 +270,40 @@
       matchPackageNames: ['zizmorcore/zizmor-action'],
       matchUpdateTypes: ['minor', 'patch', 'digest'],
       schedule: ['* 0-5 * * 6'],
+    },
+  ],
+
+  // Runner labels in a matrix. The github-actions manager reads `runs-on`
+  // only, so a runner named in a matrix (`runs-on: ${{ matrix.os }}`) sat
+  // on its old image while the rest of the workflow moved: foundry's ubuntu-24.04-arm and
+  // glyphstream's ubuntu-22.04-arm were both left out of the ubuntu-26.04
+  // pull requests. Mark each such value with the comment on the line above
+  // it --
+  //
+  //   os:
+  //     # renovate: github-runner
+  //     - ubuntu-24.04
+  //
+  //   - platform: linux/arm64
+  //     # renovate: github-runner
+  //     runner: ubuntu-24.04-arm
+  //
+  // -- and this extracts it exactly as the built-in manager extracts a
+  // runner (same datasource, depName, versioning and depType), so it joins
+  // the same branch, renovate/ubuntu-26.x, and moves in the same pull
+  // request as the `runs-on` labels. One value per marked line: an inline
+  // list `os: [a, b]` has to be written out as a block list first.
+  customManagers: [
+    {
+      customType: 'regex',
+      description: 'GitHub-hosted runner labels in workflow matrices',
+      managerFilePatterns: ['/(^|/)\\.github/workflows/[^/]+\\.ya?ml$/'],
+      matchStrings: [
+        '#\\s*renovate:\\s*github-runner\\s*\\n\\s*(?:-\\s+)?(?:[\\w-]+:\\s+)?(?<depName>[a-zA-Z]+)-(?<currentValue>[^\\s\'"#]+)',
+      ],
+      datasourceTemplate: 'github-runners',
+      versioningTemplate: 'docker',
+      depTypeTemplate: 'github-runner',
     },
   ],
 
